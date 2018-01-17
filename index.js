@@ -1,29 +1,49 @@
 //Requiring in what we need
-const app = require('express');
+const express = require('express');
+const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
-const port = process.env.PORT || 3000;
-const fs = require('fs');
 
-//Route handler// This one wasn't working so I did fs instead
-// app.get('/', function(req, res) {
-//   res.sendFile(__dirname + '/view/index.html');
-// });
-
-
-fs.readFile('/', function (req, res) {
-  fs.readFile('./index.html');
+app.get('/', function(req, res) {
+  res.sendFile(__dirname + '/index.html');
 });
 
-io.on('connection', function(socket) {
-  console.log('user connected!');
-  socket.on('disconnect', function() {
-    console.log('user disconnected');
+io.on('connection', function (socket) {
+  socket.emit('news', { hello: 'world' });
+  socket.on('my other event', function (data) {
+    console.log(data);
   });
 });
 
+ // Handle form submits
+// document.querySelector('form').addEventListener('submit', e => submitMessage(e, socket));
 //
-// const socket = io.connectWithSession();
+
+
+//Console log to make sure server is up
+http.listen(3000, function(){
+  console.log('listening on PORT:3000');
+});
+
+
+
+// io.on('connection', function(socket) {
+//
+//   socket.on('join', function(data) {
+//     socket.join(data.type);
+//     socket.session = {
+//       name: data.name,
+//     };
+//     console.log(data);
+//     console.log('someone joined');
+//   });
+// });
+//
+//
+// io.on('disconnect', function() {
+//   console.log('connection closed');
+// });
+// // const socket = io.connectWithSession();
 // prepareSocketIO();
 // socket.on('connect', function() {
 //   console.log('connection made');
@@ -47,9 +67,3 @@ io.on('connection', function(socket) {
 //     console.log('message: ' + msg);
 //   });
 // });
-
-
-//Console log to make sure server is up
-http.listen(3000, function(){
-  console.log('listening on PORT:3000');
-});
