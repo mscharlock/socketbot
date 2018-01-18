@@ -1,102 +1,122 @@
-//Requiring in what we need
-// const express = require('express');
-// const app = express();
-// const http = require('http').Server(app);
+// http://ejohn.org/blog/ecmascript-5-strict-mode-json-and-more/
+"use strict";
 
-//server related variables
-const port = 3000;
-const WebSocketServer = require('websocket').server;
-const http = require('http');
+// Optional. You will see this name in eg. 'ps' or 'top' command
+process.title = 'node-chat';
 
-//chat related variables
-let history = [];
-let clients = [];
+// Port where we'll run the websocket server
+var webSocketsServerPort = 1337;
 
+// websocket and http servers
+var webSocketServer = require('websocket').server;
+var http = require('http');
 
-//Helper function for escaping input strings
+/**
+ * Global variables
+ */
+// latest 100 messages
+var history = [ ];
+// list of currently connected clients (users)
+var clients = [ ];
+
+/**
+ * Helper function for escaping input strings
+ */
 function htmlEntities(str) {
-  return String(str)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-//http server
-const server = http.createServer(function (req, res) {
+// Array with some colors
+var colors = [ 'red', 'green', 'blue', 'magenta', 'purple', 'plum', 'orange' ];
+// ... in random order
+colors.sort(function(a,b) { return Math.random() > 0.5; } );
+
+/**
+ * HTTP server
+ */
+var server = http.createServer(function(request, response) {
+    // Not important for us. We're writing WebSocket server, not HTTP server
+});
+server.listen(webSocketsServerPort, function() {
+    console.log((new Date()) + " Server is listening on port " + webSocketsServerPort);
 });
 
-server.listen(port, function() {
-  console.log('Server listening on: ' + port);
+/**
+ * WebSocket server
+ */
+var wsServer = new webSocketServer({
+    // WebSocket server is tied to a HTTP server. WebSocket request is just
+    // an enhanced HTTP request. For more info http://tools.ietf.org/html/rfc6455#page-6
+    httpServer: server
 });
 
-//connect the wsServer to http server
-const wsServer = new WebSocketServer({
-  httpServer: server,
-});
-
-//
+// This callback function is called every time someone
+// tries to connect to the WebSocket server
 wsServer.on('request', function(request) {
-  console.log('Connection from origin: ' + request.origin);
-  let connection = request.accept(null, request.origin);
+    console.log((new Date()) + ' Connection from origin ' + request.origin + '.');
 
-  let index = clients.push(connection) - 1;
-  let userName = false;
+    // accept connection - you should check 'request.origin' to make sure that
+    // client is connecting from your website
+    // (http://en.wikipedia.org/wiki/Same_origin_policy)
+    var connection = request.accept(null, request.origin);
+    // we need to know client index to remove them on 'close' event
+    var index = clients.push(connection) - 1;
+    var userName = false;
+    var userColor = false;
 
-  console.log(('Connection accepted'));
+    console.log((new Date()) + ' Connection accepted.');
 
-  if (history.length > 0) {
-    connection.sendUTF(
-      JSON.stringify({type: 'history', data: history})
-    );
-  }
-
-  connection.on('message', function(message) {
-    if(message.type === 'utf8') {
-    if (userName === false) {
-      userName = htmlEntities(message.utf8Data);
-      console.log('Username: ' + userName);
-    } else {
-      console.log('Received a message from :' + userName + ': ' + message.utf8Data);
-
-      let historyTracker = {
-        text: htmlEntities(message.utf8Data),
-        author: userName,
-      };
-      history.push(historyTracker);
-
-      let json = JSON.stringify({type: 'message', data: historyTracker});
-      for (let i = 0; i < clients.length; i++) {
-        clients[i].sendUTF(json);
-      }
+    // send back chat history
+    if (history.length > 0) {
+        connection.sendUTF(JSON.stringify( { type: 'history', data: history} ));
     }
-    }
-  });
 
-  connection.on('close', function(connection) {
-    if (userName !== false) {
-      console.log('Disconnected: ' + connection.remoteAddress);
-    clients.splice(index, 1);
-    }
-  });
+    // user sent some message
+    connection.on('message', function(message) {
+        if (message.type === 'utf8') { // accept only text
+            if (userName === false) { // first message sent by user is their name
+                // remember user name
+                userName = htmlEntities(message.utf8Data);
+                // get random color and send it back to the user
+                userColor = colors.shift();
+                connection.sendUTF(JSON.stringify({ type:'color', data: userColor }));
+                console.log((new Date()) + ' User is known as: ' + userName
+                            + ' with ' + userColor + ' color.');
+
+            } else { // log and broadcast the message
+                console.log((new Date()) + ' Received Message from '
+                            + userName + ': ' + message.utf8Data);
+
+                // we want to keep history of all sent messages
+                var obj = {
+                    time: (new Date()).getTime(),
+                    text: htmlEntities(message.utf8Data),
+                    author: userName,
+                    color: userColor
+                };
+                history.push(obj);
+                history = history.slice(-100);
+
+                // broadcast message to all connected clients
+                var json = JSON.stringify({ type:'message', data: obj });
+                for (var i=0; i < clients.length; i++) {
+                    clients[i].sendUTF(json);
+                }
+            }
+        }
+    });
+
+    // user disconnected
+    connection.on('close', function(connection) {
+        if (userName !== false && userColor !== false) {
+            console.log((new Date()) + " Peer "
+                + connection.remoteAddress + " disconnected.");
+            // remove user from the list of connected clients
+            clients.splice(index, 1);
+            // push back user's color to be reused by another user
+            colors.push(userColor);
+        }
+    });
+
 });
-
-
-
-// const io = require('socket.io')(http);
-//
-//
-// app.get('/', function(req, res) {
-//   res.sendFile(__dirname + '/index.html');
-// });
-//
-// //Open the socket and emit//
-// io.on('connection', function (socket) {
-//   socket.emit('news', { hello: 'world' });
-//   socket.on('my other event', function (data) {
-//     console.log(data);
-//   });
-// });
-//
-// //Console log to make sure server is up
-// http.listen(3000, function(){
-//   console.log('listening on PORT:3000');
-// });
